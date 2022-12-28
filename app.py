@@ -38,7 +38,34 @@ def get_time():
         datetime.today().second) + ' ' + str(datetime.today().day) + '.' + str(datetime.today().month) + '.' + str(
         datetime.today().year)
 
+def get_chats_from_db():
+    stri = ''
+    for chat in chats.find():
+        stri += chat['name'] + ': ' + chat['link'] + '\nКоличество пользователей: ' + str(len(chat['users'])) + '\n' + '\n'
+    if stri:
+        return stri
+    else:
+        return "Пусто"
 
+async def add_accounts_from_tdata(file, paths, paths1):
+    with zipfile.ZipFile(file, 'r') as zip_ref:
+        zip_ref.extractall()
+        for folder in zip_ref.namelist():
+            paths1.append(folder)
+        zip_ref.close()
+    for i in range(0, len(paths1), 9):
+        paths.append(paths1[i])
+    for path in paths:
+        tdataFolder = './' + path + 'tdata'
+        tdesk = TDesktop(tdataFolder)
+
+        assert tdesk.isLoaded()
+
+        client = await tdesk.ToTelethon(session=path, flag=UseCurrentSession)
+
+        await client.connect()
+
+        accounts.append(client)
 
 async def add_user(client: TelegramClient, chat_instance, user_instance, fwd_limit: int = 100):
     # fwd_limit allows the user to see the number of last messages (in chats only!)
@@ -69,8 +96,27 @@ async def add_user(client: TelegramClient, chat_instance, user_instance, fwd_lim
 
     return {'added': True, 'error': ''}
 
+async def add_chat_to_db(link):
+    users = []
+
+    if link.count('/+') != 0:
+        await accounts[0](ImportChatInviteRequest(link))
+    else:
+        await accounts[0](JoinChannelRequest(link))
+
+    chat = await accounts[0].get_entity(link)
+
+    all_participants = await accounts[0].get_participants(chat, aggressive=True)
+
+    for i in all_participants:
+        if i.username:
+            users.append(i.username)
+
+    chats.insert_one({'name': chat.title, 'link': link, 'users': users})
+
 
 async def main():
+    # Connecting accounts
     config = dotenv_values(".env")
 
     api_id = config['API_ID']
@@ -94,31 +140,7 @@ async def main():
 
     await connect_all_accounts()
 
-    async def add_chat_to_db(link):
-        users = []
-
-        if link.count('/+') != 0:
-            logs.insert_one({'date': get_time(), 'log': 'Вход в чат ' + link})
-            await accounts[0](ImportChatInviteRequest(link))
-        else:
-            logs.insert_one({'date': get_time(), 'log': 'Вход в чат ' + link})
-            await accounts[0](JoinChannelRequest(link))
-
-        chat = await accounts[0].get_entity(link)
-
-        logs.insert_one({'date': get_time(), 'log': 'Получение обьекта чата ' + link})
-
-        all_participants = await accounts[0].get_participants(chat, aggressive=True)
-
-        logs.insert_one({'date': get_time(), 'log': 'Получение всех пользователей из чата ' + link})
-
-        for i in all_participants:
-            if i.username:
-                users.append(i.username)
-
-        logs.insert_one({'date': get_time(), 'log': 'Добавление пользователей чата ' + link + ' в бд'})
-
-        chats.insert_one({'name': chat.title, 'link': link, 'users': users})
+    # Commands
 
     @bot_client.on(events.NewMessage(pattern='/(?i)start'))
     async def handler(event):
@@ -149,24 +171,7 @@ async def main():
             print(file)
             paths1 = []
             paths = []
-            with zipfile.ZipFile(file, 'r') as zip_ref:
-                zip_ref.extractall()
-                for folder in zip_ref.namelist():
-                    paths1.append(folder)
-                zip_ref.close()
-            for i in range(0, len(paths1), 9):
-                paths.append(paths1[i])
-            for path in paths:
-                tdataFolder = './' + path + 'tdata'
-                tdesk = TDesktop(tdataFolder)
-
-                assert tdesk.isLoaded()
-
-                client = await tdesk.ToTelethon(session=path, flag=UseCurrentSession)
-
-                await client.connect()
-
-                accounts.append(client)
+            add_accounts_from_tdata(file, paths, paths1)
 
             await connect_all_accounts()
             await conv.send_message("Успешно")
@@ -182,15 +187,7 @@ async def main():
     async def handler(event):
         sender = await event.get_sender()
         SENDER = sender
-        stri = ''
-        for chat in chats.find():
-            stri += chat['name'] + ': ' + chat['link'] + '\nКоличество пользователей: ' + str(
-                len(chat['users'])) + '\n' + '\n'
-
-        if stri:
-            await bot_client.send_message(SENDER, stri)
-        else:
-            await bot_client.send_message(SENDER, 'Пусто')
+        await bot_client.send_message(SENDER, get_chats_from_db())
 
     @bot_client.on(events.NewMessage(pattern='/(?i)сообщение'))
     async def handler(event):
@@ -198,7 +195,6 @@ async def main():
         sender = await event.get_sender()
         SENDER = sender.id
         if isinstance(message[0], list):
-
             await bot_client.send_message(SENDER, message[0][0], file=message[0][1])
         else:
             await bot_client.send_message(SENDER, message[0])
@@ -302,7 +298,7 @@ async def main():
         async with bot_client.conversation(SENDER) as conv:
             await conv.send_message('Введите количество человек')
             number = await conv.get_response()
-            await conv.send_message('Введите ссылку на чат для приглашения')
+            await conv.send_message('Введите ссылку на чат для инвайтинга')
             invite_chat = await conv.get_response()
             await conv.send_message('Начинаю инвайтинг.......')
 
