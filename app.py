@@ -70,9 +70,7 @@ async def main():
             msg = await conv.get_response()
             file = await bot_client.download_media(msg.media)
             print(file)
-            paths1 = []
-            paths = []
-            await add_accounts_from_tdata(file, paths, paths1, accounts=accounts)
+            await add_accounts_from_tdata(file, accounts=accounts)
 
             await connect_all_accounts()
             await conv.send_message("Успешно")

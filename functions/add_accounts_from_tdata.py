@@ -2,7 +2,9 @@ import zipfile
 from opentele.api import UseCurrentSession
 from opentele.td import TDesktop
 
-async def add_accounts_from_tdata(file, paths, paths1, accounts):
+async def add_accounts_from_tdata(file, accounts):
+    paths1 = []
+    paths = []
     with zipfile.ZipFile(file, 'r') as zip_ref:
         zip_ref.extractall()
         for folder in zip_ref.namelist():
