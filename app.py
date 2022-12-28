@@ -1,119 +1,20 @@
 import asyncio
-import os
-import shutil
-import sys
-import zipfile
-from datetime import datetime, date, time
-
 import pymongo
-import socks
 from dotenv import dotenv_values
-from opentele.api import API, UseCurrentSession
-from opentele.td import TDesktop
 from opentele.tl import TelegramClient
-from telethon import TelegramClient, events, sync
-from telethon.errors.rpcerrorlist import UserAlreadyParticipantError
+from telethon import TelegramClient, events
 from telethon.tl.custom.button import Button
-from telethon.tl.functions.channels import InviteToChannelRequest
-from telethon.tl.functions.channels import JoinChannelRequest
-from telethon.tl.functions.messages import AddChatUserRequest
-from telethon.tl.functions.messages import ImportChatInviteRequest
-from telethon.tl.functions.users import GetFullUserRequest
-from telethon.tl.types import Chat, Channel, InputChannel
+
+from functions.get_chats_from_db import get_chats_from_db
+from functions.add_accounts_from_tdata import add_accounts_from_tdata
+from functions.add_chat_to_db import add_chat_to_db
+from functions.add_user import add_user
 
 accounts = []
-
 db_client = pymongo.MongoClient("mongodb://localhost:27017")
-
 current_db = db_client['bot']
-
 chats = current_db['chats']
-logs = current_db['logs']
-
 message = ['привет']
-
-
-def get_time():
-    return str(datetime.today().hour) + ':' + str(datetime.today().minute) + ':' + str(
-        datetime.today().second) + ' ' + str(datetime.today().day) + '.' + str(datetime.today().month) + '.' + str(
-        datetime.today().year)
-
-def get_chats_from_db():
-    stri = ''
-    for chat in chats.find():
-        stri += chat['name'] + ': ' + chat['link'] + '\nКоличество пользователей: ' + str(len(chat['users'])) + '\n' + '\n'
-    if stri:
-        return stri
-    else:
-        return "Пусто"
-
-async def add_accounts_from_tdata(file, paths, paths1):
-    with zipfile.ZipFile(file, 'r') as zip_ref:
-        zip_ref.extractall()
-        for folder in zip_ref.namelist():
-            paths1.append(folder)
-        zip_ref.close()
-    for i in range(0, len(paths1), 9):
-        paths.append(paths1[i])
-    for path in paths:
-        tdataFolder = './' + path + 'tdata'
-        tdesk = TDesktop(tdataFolder)
-
-        assert tdesk.isLoaded()
-
-        client = await tdesk.ToTelethon(session=path, flag=UseCurrentSession)
-
-        await client.connect()
-
-        accounts.append(client)
-
-async def add_user(client: TelegramClient, chat_instance, user_instance, fwd_limit: int = 100):
-    # fwd_limit allows the user to see the number of last messages (in chats only!)
-    # user_instance and chat_instance can be link or user or short name
-
-    chat = await client.get_entity(chat_instance)
-
-    if isinstance(chat, Chat):
-        request = AddChatUserRequest(
-            chat_id=chat.id,
-            user_id=user_instance,
-            fwd_limit=fwd_limit)
-
-    elif isinstance(chat, Channel):
-        request = InviteToChannelRequest(
-                InputChannel(chat.id, chat.access_hash),
-                [user_instance])
-
-    else:
-        return {'added': False, 'error': 'Chat argument is not a chat'}
-
-    try:
-        await client(request)
-    except UserAlreadyParticipantError:
-        return {'added': False, 'user_already_exists': True, 'error': 'User already exists in the chat'}
-    except Exception as e:
-        return {'added': False, 'user_already_exists': False, 'error': e.args[0]}
-
-    return {'added': True, 'error': ''}
-
-async def add_chat_to_db(link):
-    users = []
-
-    if link.count('/+') != 0:
-        await accounts[0](ImportChatInviteRequest(link))
-    else:
-        await accounts[0](JoinChannelRequest(link))
-
-    chat = await accounts[0].get_entity(link)
-
-    all_participants = await accounts[0].get_participants(chat, aggressive=True)
-
-    for i in all_participants:
-        if i.username:
-            users.append(i.username)
-
-    chats.insert_one({'name': chat.title, 'link': link, 'users': users})
-
 
 async def main():
     # Connecting accounts
@@ -171,7 +72,7 @@ async def main():
             print(file)
             paths1 = []
             paths = []
-            add_accounts_from_tdata(file, paths, paths1)
+            await add_accounts_from_tdata(file, paths, paths1, accounts=accounts)
 
             await connect_all_accounts()
             await conv.send_message("Успешно")
@@ -187,7 +88,7 @@ async def main():
     async def handler(event):
         sender = await event.get_sender()
         SENDER = sender
-        await bot_client.send_message(SENDER, get_chats_from_db())
+        await bot_client.send_message(SENDER, get_chats_from_db(chats=chats))
 
     @bot_client.on(events.NewMessage(pattern='/(?i)сообщение'))
     async def handler(event):
@@ -269,7 +170,7 @@ async def main():
             await conv.send_message('Начинаю парсинг........')
             print(group.message)
             try:
-                await add_chat_to_db(group.message)
+                await add_chat_to_db(group.message, chats=chats, accounts=accounts)
                 await conv.send_message('Успешно')
             except:
                 await conv.send_message('Бот уже состоит в группе')
