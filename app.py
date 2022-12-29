@@ -71,7 +71,6 @@ async def main():
             file = await bot_client.download_media(msg.media)
             print(file)
             await add_accounts_from_tdata(file, accounts=accounts)
-
             await connect_all_accounts()
             await conv.send_message("Успешно")
 
