@@ -4,11 +4,14 @@ from dotenv import dotenv_values
 from opentele.tl import TelegramClient
 from telethon import TelegramClient, events
 from telethon.tl.custom.button import Button
+import os
 
 from functions.get_chats_from_db import get_chats_from_db
 from functions.add_accounts_from_tdata import add_accounts_from_tdata
 from functions.add_chat_to_db import add_chat_to_db
+from functions.add_chat_to_db import add_bots_to_chat
 from functions.add_user import add_user
+from functions.save_db_to_excel import save_db_to_excel
 
 accounts = []
 db_client = pymongo.MongoClient("mongodb://localhost:27017")
@@ -25,14 +28,13 @@ async def main():
     phone = config['PHONE']
     BOT_TOKEN = config['BOT_TOKEN']
 
-
     client = TelegramClient(phone, api_id, api_hash)
 
     bot_client = await TelegramClient('bot', api_id, api_hash).start(bot_token=BOT_TOKEN)
 
     await client.connect()
 
-    accounts.append(client)
+    # accounts.append(client)
 
     async def connect_all_accounts():
         print(accounts)
@@ -57,7 +59,8 @@ async def main():
              Button.text("/начать_рассылку", resize=True), ],
             [Button.text("/добавить_аккаунты", resize=True),
              Button.text("/начать_инвайтинг", resize=True), ],
-            [Button.text("/количество_аккаунтов", resize=True), ]
+            [Button.text("/количество_аккаунтов", resize=True),
+            Button.text("/выгрузка_базы", resize=True), ]
         ])
 
     @bot_client.on(events.NewMessage(pattern='/(?i)добавить_аккаунты'))
@@ -83,9 +86,19 @@ async def main():
 
     @bot_client.on(events.NewMessage(pattern='/(?i)база'))
     async def handler(event):
+        print('db')
         sender = await event.get_sender()
         SENDER = sender
         await bot_client.send_message(SENDER, get_chats_from_db(chats=chats))
+
+    @bot_client.on(events.NewMessage(pattern='/(?i)выгрузка_базы'))
+    async def handler(event):
+        print('load db')
+        sender = await event.get_sender()
+        SENDER = sender
+        save_db_to_excel(chats=chats)
+        await bot_client.send_message(SENDER, 'База данных', file='base.xlsx')
+        os.remove('base.xlsx')
 
     @bot_client.on(events.NewMessage(pattern='/(?i)сообщение'))
     async def handler(event):
@@ -138,20 +151,32 @@ async def main():
 
             print(number.message)
 
-            arr2 = arr1[1:int(number.message)]
+            arr2 = arr1[:int(number.message)]
             print(arr2)
 
             l = len(accounts)
 
-            for account in accounts:
-                for i in arr2[:l]:
-                    await account.connect()
-                    if isinstance(i, str):
-                        if isinstance(message[0], list):
-                            await account.send_message(i, message[0][0], file=message[0][1])
-                        else:
-                            await account.send_message(i, message[0])
-                    arr2.remove(i)
+            num = 0
+
+            for i in arr2:
+                await accounts[num].connect()
+                
+                if isinstance(message[0], list):
+                    print(num)
+                    print(l)
+                    print(i)
+                    await accounts[num].send_message(i, message[0][0], file=message[0][1])
+                    num += 1
+                    if num == l:
+                        num = 0
+                else:
+                    print(num)
+                    print(l)
+                    print(i)
+                    await accounts[num].send_message(i, message[0])
+                    num += 1
+                    if num == l:
+                        num = 0
 
             await bot_client.send_message(SENDER, 'Успешно разослано ' + number.message + ' сообщений')
 
@@ -179,11 +204,11 @@ async def main():
         SENDER = sender.id
 
         async with bot_client.conversation(SENDER) as conv:
-            await conv.send_message('Введите название группы')
+            await conv.send_message('Введите ссылку на группу')
             group = await conv.get_response()
             await bot_client.send_message(SENDER, 'Начинаю удаление.....')
 
-            chats.delete_one({'name': group.message})
+            chats.delete_one({'link': group.message})
 
             await bot_client.send_message(SENDER, 'Успешно')
 
@@ -200,6 +225,8 @@ async def main():
             invite_chat = await conv.get_response()
             await conv.send_message('Начинаю инвайтинг.......')
 
+            await add_bots_to_chat(invite_chat.message, accounts=accounts)
+
             for i in chats.find():
                 arr1.extend(i["users"])
 
@@ -215,16 +242,29 @@ async def main():
             l = len(accounts)
 
             invited_count = 0
-            for account in accounts:
-                for i in arr2[:l]:
-                    await account.connect()
-                    if isinstance(i, str):
-                        if invite_chat.message.count('/+') == 0:
-                            response = await add_user(account, invite_chat.message, i)
-                            if response['added']:
-                                invited_count += 1
 
-                    arr2.remove(i)
+            
+            l = len(accounts)
+
+            num = 0
+
+            for i in arr2:
+                await accounts[num].connect()
+                if isinstance(i, str):
+                    if isinstance(message[0], list):
+                        response = await add_user(accounts[num], invite_chat.message, i)
+                        if response['added']:
+                            invited_count += 1
+                        num += 1
+                        if num == l:
+                            num = 0
+                    else:
+                        response = await add_user(accounts[num], invite_chat.message, i)
+                        if response['added']:
+                            invited_count += 1
+                        num += 1
+                        if num == l:
+                            num = 0
             await bot_client.send_message(SENDER, 'Успешно приглашено ' + number.message + ' пользователей')
 
     await bot_client.run_until_disconnected()
