@@ -34,7 +34,7 @@ async def main():
 
     await client.connect()
 
-    # accounts.append(client)
+    accounts.append(client)
 
     async def connect_all_accounts():
         print(accounts)
@@ -96,7 +96,14 @@ async def main():
         print('load db')
         sender = await event.get_sender()
         SENDER = sender
-        save_db_to_excel(chats=chats)
+
+        async with bot_client.conversation(SENDER) as conv:
+            await conv.send_message('Введите ссылку на группу для выгрузки')
+            group = await conv.get_response()
+
+            chat = chats.find_one( { 'link': group.message } )
+
+            save_db_to_excel(chat=chat)
         await bot_client.send_message(SENDER, 'База данных', file='base.xlsx')
         os.remove('base.xlsx')
 
@@ -136,20 +143,17 @@ async def main():
         print('start messaging')
         sender = await event.get_sender()
         SENDER = sender.id
-        arr1 = []
         async with bot_client.conversation(SENDER) as conv:
             await conv.send_message('Введите количество человек')
             number = await conv.get_response()
+            await conv.send_message('Введите ссылку на группу для рассылки')
+            group = await conv.get_response()
             await conv.send_message('Начинаю рассылку.......')
 
-            for i in chats.find():
-                arr1.extend(i["users"])
-
-            for i in arr1:
-                if not i:
-                    arr1.remove(i)
+            arr1 = chats.find_one( { 'link': group.message } )['users']
 
             print(number.message)
+            print(group.message)
 
             arr2 = arr1[:int(number.message)]
             print(arr2)
@@ -217,24 +221,23 @@ async def main():
         print("start inviting")
         sender = await event.get_sender()
         SENDER = sender.id
-        arr1 = []
         async with bot_client.conversation(SENDER) as conv:
             await conv.send_message('Введите количество человек')
             number = await conv.get_response()
-            await conv.send_message('Введите ссылку на чат для инвайтинга')
+            await conv.send_message('Введите ссылку на чат, из которого необходимо пригласить пользователей')
+            group = await conv.get_response()
+            await conv.send_message('Введите ссылку на чат, куда необходимо пригласить пользователей')
             invite_chat = await conv.get_response()
             await conv.send_message('Начинаю инвайтинг.......')
 
             await add_bots_to_chat(invite_chat.message, accounts=accounts)
 
-            for i in chats.find():
-                arr1.extend(i["users"])
+            arr1 = chats.find_one( { 'link': group.message } )['users']
 
-            for i in arr1:
-                if not i:
-                    arr1.remove(i)
 
             print(number.message)
+            print(group.message)
+            print(invite_chat.message)
 
             arr2 = arr1[1:int(number.message)]
             print(arr2)
