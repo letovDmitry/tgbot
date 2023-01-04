@@ -5,6 +5,7 @@ from opentele.tl import TelegramClient
 from telethon import TelegramClient, events
 from telethon.tl.custom.button import Button
 import os
+from telethon.errors.rpcerrorlist import PeerFloodError
 
 from functions.get_chats_from_db import get_chats_from_db
 from functions.add_accounts_from_tdata import add_accounts_from_tdata
@@ -169,7 +170,10 @@ async def main():
                     print(num)
                     print(l)
                     print(i)
-                    await accounts[num].send_message(i, message[0][0], file=message[0][1])
+                    try:
+                        await accounts[num].send_message(i, message[0][0], file=message[0][1])
+                    except PeerFloodError:
+                        await accounts[num+1].send_message(i, message[0][0], file=message[0][1])
                     num += 1
                     if num == l:
                         num = 0
@@ -177,7 +181,13 @@ async def main():
                     print(num)
                     print(l)
                     print(i)
-                    await accounts[num].send_message(i, message[0])
+                    try:
+                        await accounts[num].send_message(i, message[0])
+                    except PeerFloodError:
+                        if num == l - 1:
+                            await accounts[0].send_message(i, message[0])
+                        else:
+                            await accounts[num+1].send_message(i, message[0])
                     num += 1
                     if num == l:
                         num = 0
