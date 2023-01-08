@@ -33,9 +33,9 @@ async def main():
 
     bot_client = await TelegramClient('bot', api_id, api_hash).start(bot_token=BOT_TOKEN)
 
-    await client.connect()
+    # await client.connect()
 
-    accounts.append(client)
+    # accounts.append(client)
 
     async def connect_all_accounts():
         print(accounts)
@@ -104,7 +104,7 @@ async def main():
 
             chat = chats.find_one( { 'link': group.message } )
 
-            save_db_to_excel(chat=chat)
+            await save_db_to_excel(chat=chat, accounts=accounts)
         await bot_client.send_message(SENDER, 'База данных', file='base.xlsx')
         os.remove('base.xlsx')
 
